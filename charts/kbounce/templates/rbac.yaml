@@ -1,0 +1,30 @@
+{{- if .Values.rbac.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kbounce.fullname" . }}
+  labels:
+    {{- include "kbounce.labels" . | nindent 4 }}
+rules:
+  # Minimal placeholder rules; expand only when kbounce features
+  # actually require k8s API access (today it preserves caller auth
+  # end-to-end and needs nothing).
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kbounce.fullname" . }}
+  labels:
+    {{- include "kbounce.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kbounce.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kbounce.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -1,0 +1,24 @@
+{{- if .Values.profiles.additionalProfiles }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kbounce.fullname" . }}-profiles
+  labels:
+    {{- include "kbounce.labels" . | nindent 4 }}
+data:
+  profiles.yaml: |
+    profiles:
+{{ toYaml .Values.profiles.additionalProfiles | indent 6 }}
+{{- end }}
+{{- if .Values.upstream.caBundle }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kbounce.fullname" . }}-upstream-ca
+  labels:
+    {{- include "kbounce.labels" . | nindent 4 }}
+data:
+  upstream-ca.crt: |
+{{ .Values.upstream.caBundle | indent 4 }}
+{{- end }}

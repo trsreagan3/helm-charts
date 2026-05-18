@@ -1,0 +1,141 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kbounce.fullname" . }}
+  labels:
+    {{- include "kbounce.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kbounce.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kbounce.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "kbounce.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: kbounce
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - run
+            - --mode={{ .Values.proxy.mode }}
+            - --host={{ .Values.proxy.host }}
+            - --port={{ .Values.proxy.port }}
+            - --default-policy={{ .Values.proxy.defaultPolicy }}
+            - --active-profile={{ .Values.profiles.active }}
+            - --upstream-apiserver={{ .Values.upstream.apiserver }}
+            {{- if .Values.upstream.caBundle }}
+            - --upstream-ca-bundle=/etc/kbounce/upstream-ca.crt
+            {{- end }}
+            - --mgmt-host={{ .Values.mgmt.host }}
+            - --mgmt-port={{ .Values.mgmt.port }}
+            - --healthz-path={{ .Values.mgmt.healthzPath }}
+            {{- if .Values.profiles.additionalProfiles }}
+            - --profiles-path=/etc/kbounce/profiles.yaml
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            - --tls-cert=/etc/kbounce/tls/listener-tls-cert
+            - --tls-key=/etc/kbounce/tls/listener-tls-key
+            {{- if .Values.tls.clientAuth }}
+            - --tls-client-ca=/etc/kbounce/tls/listener-tls-client-ca
+            - --tls-require-client-cert
+            {{- end }}
+            {{- end }}
+          env:
+            {{- if not .Values.versionCheck.enabled }}
+            - name: KBOUNCE_NO_VERSION_CHECK
+              value: "1"
+            {{- end }}
+          ports:
+            - name: wire
+              containerPort: {{ .Values.proxy.port }}
+              protocol: TCP
+            - name: mgmt
+              containerPort: {{ .Values.mgmt.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.mgmt.healthzPath }}
+              port: mgmt
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.mgmt.healthzPath }}
+              port: mgmt
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.profiles.additionalProfiles }}
+            - name: profiles
+              mountPath: /etc/kbounce/profiles.yaml
+              subPath: profiles.yaml
+              readOnly: true
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            - name: tls
+              mountPath: /etc/kbounce/tls
+              readOnly: true
+            {{- end }}
+            {{- if .Values.upstream.caBundle }}
+            - name: upstream-ca
+              mountPath: /etc/kbounce/upstream-ca.crt
+              subPath: upstream-ca.crt
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.profiles.additionalProfiles }}
+        - name: profiles
+          configMap:
+            name: {{ include "kbounce.fullname" . }}-profiles
+        {{- end }}
+        {{- if .Values.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secretName | required "tls.secretName is required when tls.enabled is true" }}
+        {{- end }}
+        {{- if .Values.upstream.caBundle }}
+        - name: upstream-ca
+          configMap:
+            name: {{ include "kbounce.fullname" . }}-upstream-ca
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

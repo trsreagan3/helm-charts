@@ -1,0 +1,46 @@
+# Transparent mode — kbounce sits fully in-path, terminates client
+# TLS, gates the request, then re-encrypts upstream to the API server.
+# Clients have NO way to know kbounce is there (other than the
+# kbounce-issued certificate). Use when you want to enforce that all
+# traffic to the cluster goes through the proxy.
+#
+# Requires:
+#  - A Kubernetes Secret with `listener-tls-cert` and `listener-tls-key`
+#    (and optionally `listener-tls-client-ca` if you want mTLS).
+#  - Network policy / service mesh routing so clients can only reach
+#    the API server via kbounce.
+#
+# Install:
+#   kubectl create secret generic kbounce-tls \
+#     --from-file=listener-tls-cert=./tls.crt \
+#     --from-file=listener-tls-key=./tls.key
+#   helm install kbounce trsreagan3/kbounce \
+#     -f examples/transparent-mode-values.yaml
+
+proxy:
+  mode: transparent
+  port: 8443
+  defaultPolicy: deny
+
+profiles:
+  # In transparent mode you almost certainly want safe-default rather
+  # than full-user, since the proxy is the only thing between the
+  # caller and the API server.
+  active: safe-default
+
+upstream:
+  apiserver: https://kubernetes.default.svc
+
+tls:
+  enabled: true
+  secretName: kbounce-tls
+  clientAuth: false
+
+service:
+  # Expose the wire port outside the cluster so clients can reach it
+  # without port-forwarding. Pair with a NetworkPolicy that blocks
+  # direct API-server access.
+  type: LoadBalancer
+
+versionCheck:
+  enabled: false

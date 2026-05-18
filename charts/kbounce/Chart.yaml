@@ -1,0 +1,18 @@
+apiVersion: v2
+name: kbounce
+description: Kubernetes safety proxy for AI agents and dev workflows
+type: application
+version: 0.1.0
+appVersion: "1.0.0-pre"
+home: https://github.com/trsreagan3/kbouncer
+sources:
+  - https://github.com/trsreagan3/kbouncer
+keywords:
+  - kubernetes
+  - security
+  - proxy
+  - audit
+  - ai-agents
+maintainers:
+  - name: trsreagan3
+    url: https://github.com/trsreagan3

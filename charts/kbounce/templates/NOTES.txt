@@ -1,0 +1,26 @@
+kbounce {{ .Chart.AppVersion }} (chart {{ .Chart.Version }}) installed as {{ include "kbounce.fullname" . }} in namespace {{ .Release.Namespace }}.
+
+Active mode:    {{ .Values.proxy.mode }}
+Active profile: {{ .Values.profiles.active }}
+Default policy: {{ .Values.proxy.defaultPolicy }}
+
+Forward the wire port to localhost to test:
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "kbounce.fullname" . }} 8443:{{ .Values.proxy.port }}
+
+Then point your client (kubectl, agent SDK) at:
+
+  https://localhost:8443
+
+Verify health:
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "kbounce.fullname" . }} 8444:{{ .Values.mgmt.port }}
+  curl http://localhost:8444{{ .Values.mgmt.healthzPath }}
+
+See https://github.com/trsreagan3/kbouncer for full docs.
+
+NOTE: kbounce is a deterrent proxy, not a security boundary. Pair with
+Kubernetes RBAC + admission webhooks for defense in depth. The proxy
+gates and audits agent traffic that flows through it; nothing stops a
+caller from bypassing the proxy and hitting the API server directly if
+they have network access and credentials.

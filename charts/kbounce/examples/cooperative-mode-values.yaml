@@ -1,0 +1,31 @@
+# Cooperative mode — kbounce gates + audits, but agents pass their
+# own auth headers through to the upstream API server. This is the
+# default mode per bounce-default-profile-pattern: lean-permissive,
+# always audits, blocks only universally-dangerous ops.
+#
+# Install:
+#   helm install kbounce trsreagan3/kbounce \
+#     -f examples/cooperative-mode-values.yaml
+
+proxy:
+  mode: cooperative
+  port: 8443
+  defaultPolicy: deny
+
+profiles:
+  active: full-user
+  # Layer one extra profile that blocks delete verbs in production
+  # namespaces while keeping everything else permissive.
+  additionalProfiles:
+    - name: full-user-prod-readonly-deletes
+      gates:
+        - effect: deny
+          verbs: ["delete", "deletecollection"]
+          namespaces: ["prod", "production"]
+      audit: all
+
+upstream:
+  apiserver: https://kubernetes.default.svc
+
+versionCheck:
+  enabled: false

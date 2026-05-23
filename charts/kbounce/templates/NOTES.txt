@@ -12,10 +12,9 @@ Then point your client (kubectl, agent SDK) at:
 
   https://localhost:8443
 
-Verify health:
+Verify health (same port — kbounce serves /healthz from the wire mux):
 
-  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "kbounce.fullname" . }} 8444:{{ .Values.mgmt.port }}
-  curl http://localhost:8444{{ .Values.mgmt.healthzPath }}
+  curl {{ if .Values.tls.enabled }}-k https{{ else }}http{{ end }}://localhost:8443/healthz
 
 See https://github.com/trsreagan3/kbouncer for full docs.
 

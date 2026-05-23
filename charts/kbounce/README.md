@@ -49,7 +49,6 @@ See `examples/cooperative-mode-values.yaml` and
 | `profiles.active` | `full-user` | Default profile (lean-permissive) |
 | `profiles.additionalProfiles` | `[]` | Extra profiles rendered into a ConfigMap |
 | `upstream.apiserver` | `https://kubernetes.default.svc` | Upstream target |
-| `mgmt.port` | `8444` | Healthz + metrics listener |
 | `tls.enabled` | `false` | Terminate TLS at kbounce (required for transparent mode) |
 | `versionCheck.enabled` | `false` | Opt-in GitHub version check (off by default) |
 | `rbac.enabled` | `false` | kbounce does not need RBAC by default |
@@ -63,7 +62,8 @@ checks against.
 - Non-root distroless UID `65532`
 - `readOnlyRootFilesystem: true` with an emptyDir at `/tmp` for SQLite
   scratch
-- Liveness + readiness probes against `/healthz` on the mgmt port
+- Liveness + readiness probes against `/healthz` on the wire port
+  (kbounce serves health from the same listener as the proxy)
 - Cooperative mode + `full-user` profile per the Bounce default
   profile pattern (lean-permissive, audit-everything, block only
   universally-dangerous ops)

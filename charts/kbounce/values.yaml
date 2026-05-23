@@ -18,6 +18,8 @@ image:
 imagePullSecrets: []
 
 # Proxy listener config: this is the port your agents / kubectl point at.
+# /healthz lives on this same port; there is no separate management
+# listener in the kbounce binary.
 proxy:
   # -- Operating mode: `cooperative` (default — agents pass auth headers
   # through, kbounce gates + audits) or `transparent` (kbounce is fully
@@ -25,7 +27,10 @@ proxy:
   # bounce-default-profile-pattern.
   mode: cooperative
   # -- Listen address inside the pod. ClusterIP service exposes this on
-  # the pod network.
+  # the pod network. Default 0.0.0.0 so the Service can route to it; the
+  # chart automatically passes --i-know-this-binds-externally to satisfy
+  # kbounce's loopback-default safety gate. Override to 127.0.0.1 for a
+  # sidecar-only deployment.
   host: "0.0.0.0"
   port: 8443
   # -- Fail-closed default when no profile matches a request.
@@ -36,7 +41,8 @@ proxy:
 profiles:
   # -- Active profile name. Default `full-user` per
   # bounce-default-profile-pattern (lean-permissive, audits all,
-  # blocks only universally-dangerous ops).
+  # blocks only universally-dangerous ops). Maps to kbounce's --profile
+  # flag.
   active: full-user
   # -- Additional user-defined profiles. When non-empty, rendered into
   # a ConfigMap mounted at /etc/kbounce/profiles.yaml and passed via
@@ -46,30 +52,49 @@ profiles:
 
 # Upstream Kubernetes API target. In-cluster default works for the
 # common case (kbounce gates requests to the same cluster it runs in).
+# Maps to kbounce's --upstream flag.
+#
+# NOTE: a custom upstream CA bundle is NOT currently exposed by the
+# kbounce binary — the in-cluster CA at
+# /var/run/secrets/kubernetes.io/serviceaccount/ca.crt is the only
+# trust anchor available in-pod. If you need a custom CA, run kbounce
+# with --kubeconfig pointing at a kubeconfig that names a custom CA;
+# follow-up tracked at https://github.com/trsreagan3/kbouncer (see
+# also iam-jit task §A33).
 upstream:
   apiserver: https://kubernetes.default.svc
-  # -- CA bundle override for upstream TLS verification. Leave empty
-  # to use the in-cluster default at
-  # /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-  caBundle: ""
-
-# Management listener: separate port for /healthz, /metrics, /audit.
-# Keep on 127.0.0.1 unless you explicitly want it network-reachable.
-mgmt:
-  host: "127.0.0.1"
-  port: 8444
-  healthzPath: /healthz
 
 # TLS material for the proxy listener. When enabled, you must create a
 # Secret with keys `listener-tls-cert`, `listener-tls-key`, and
 # optionally `listener-tls-client-ca` (for mTLS), then set
-# tls.secretName to its name.
+# tls.secretName to its name. The chart wires --require-client-cert=<ca-path>
+# when clientAuth is true; presence of that flag implies "require",
+# matching the kbounce binary's contract.
 tls:
   enabled: false
   secretName: ""
   # -- Require client certs (mTLS). Requires `listener-tls-client-ca`
   # key in the Secret.
   clientAuth: false
+
+# Audit endpoint authentication. kbounce's wire port also serves
+# GET /audit/events, which surfaces recent decision events. When the
+# listener is bound non-loopback (the chart's default), kbounce
+# REQUIRES a bearer token so the endpoint isn't an unauthenticated
+# leak. The chart wires the token through an env-var indirection so
+# secret material stays out of process args.
+audit:
+  events:
+    # -- Existing Kubernetes Secret to pull the audit-events bearer
+    # token from. Must contain key `token`. When empty, the chart
+    # creates a Secret of its own with a value either taken from
+    # `audit.events.token` below or auto-generated at install time.
+    existingSecret: ""
+    # -- Inline token value used when `existingSecret` is empty. When
+    # both are empty the chart generates a random 32-byte hex token.
+    # Storing tokens in values.yaml is discouraged for production —
+    # prefer `existingSecret`. NEVER commit a real token here.
+    token: ""
 
 # Opt-in version check. Default OFF per opt-in-feedback-pipeline:
 # kbounce phones home to GitHub for latest-version comparison only when
@@ -103,8 +128,8 @@ rbac:
 
 service:
   type: ClusterIP
-  # Wire and mgmt ports are exposed by name; override only if you need
-  # specific NodePort numbers or LoadBalancer behaviour.
+  # The wire port (which also hosts /healthz) is exposed by name;
+  # override only if you need a specific NodePort or LoadBalancer.
   annotations: {}
 
 podAnnotations: {}

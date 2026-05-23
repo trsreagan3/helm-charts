@@ -40,49 +40,91 @@ spec:
             - --host={{ .Values.proxy.host }}
             - --port={{ .Values.proxy.port }}
             - --default-policy={{ .Values.proxy.defaultPolicy }}
-            - --active-profile={{ .Values.profiles.active }}
-            - --upstream-apiserver={{ .Values.upstream.apiserver }}
-            {{- if .Values.upstream.caBundle }}
-            - --upstream-ca-bundle=/etc/kbounce/upstream-ca.crt
-            {{- end }}
-            - --mgmt-host={{ .Values.mgmt.host }}
-            - --mgmt-port={{ .Values.mgmt.port }}
-            - --healthz-path={{ .Values.mgmt.healthzPath }}
-            {{- if .Values.profiles.additionalProfiles }}
-            - --profiles-path=/etc/kbounce/profiles.yaml
+            - --profile={{ .Values.profiles.active }}
+            - --upstream={{ .Values.upstream.apiserver }}
+            {{- /*
+              SQLite store lives in /tmp (an emptyDir) because the pod
+              runs with readOnlyRootFilesystem: true. The kbounce
+              default of ~/.kbouncer/state.db would error with
+              "read-only file system" on first start. Also use /tmp for
+              profiles.yaml the binary writes on first start.
+            */}}
+            - --db=/tmp/kbouncer/state.db
+            - --profiles-path={{ if .Values.profiles.additionalProfiles }}/etc/kbounce/profiles.yaml{{ else }}/tmp/kbouncer/profiles.yaml{{ end }}
+            {{- /*
+              The kbounce binary refuses to bind to anything other than
+              127.0.0.1 / ::1 / localhost without an explicit operator
+              acknowledgement. In a Pod context the listener must accept
+              traffic from the Service's ClusterIP, so the chart's default
+              `proxy.host` is 0.0.0.0 — which requires the ack flag below.
+              When an operator overrides proxy.host to a loopback value
+              for a sidecar-style deployment, the flag is omitted.
+            */}}
+            {{- $bindHost := .Values.proxy.host -}}
+            {{- if not (or (eq $bindHost "127.0.0.1") (eq $bindHost "::1") (eq $bindHost "localhost")) }}
+            - --i-know-this-binds-externally
             {{- end }}
             {{- if .Values.tls.enabled }}
             - --tls-cert=/etc/kbounce/tls/listener-tls-cert
             - --tls-key=/etc/kbounce/tls/listener-tls-key
             {{- if .Values.tls.clientAuth }}
-            - --tls-client-ca=/etc/kbounce/tls/listener-tls-client-ca
-            - --tls-require-client-cert
+            - --require-client-cert=/etc/kbounce/tls/listener-tls-client-ca
             {{- end }}
+            {{- end }}
+            {{- /*
+              GET /audit/events sits on the wire port. The binary
+              REQUIRES --audit-events-token when bound non-loopback so
+              the endpoint isn't an unauthenticated leak. We pass it via
+              $(VAR) expansion from a Secret-backed env var so the
+              token never appears in the rendered Deployment manifest;
+              process listing inside the container still sees the value
+              after expansion (unavoidable without a binary-side env-var
+              fallback — tracked at iam-jit §A33 follow-up).
+            */}}
+            {{- if not (or (eq .Values.proxy.host "127.0.0.1") (eq .Values.proxy.host "::1") (eq .Values.proxy.host "localhost")) }}
+            - --audit-events-token=$(KBOUNCE_AUDIT_EVENTS_TOKEN)
             {{- end }}
           env:
             {{- if not .Values.versionCheck.enabled }}
             - name: KBOUNCE_NO_VERSION_CHECK
               value: "1"
             {{- end }}
+            {{- if not (or (eq .Values.proxy.host "127.0.0.1") (eq .Values.proxy.host "::1") (eq .Values.proxy.host "localhost")) }}
+            - name: KBOUNCE_AUDIT_EVENTS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-audit-events" (include "kbounce.fullname" .)) .Values.audit.events.existingSecret }}
+                  key: token
+            {{- end }}
           ports:
             - name: wire
               containerPort: {{ .Values.proxy.port }}
               protocol: TCP
-            - name: mgmt
-              containerPort: {{ .Values.mgmt.port }}
-              protocol: TCP
+          {{- /*
+            Health endpoints live on the SAME port as the wire proxy
+            (`/healthz` is registered on the single mux at
+            internal/proxy/proxy.go). There is no separate management
+            listener in the kbounce binary, so liveness + readiness
+            both probe the wire port.
+          */}}
           livenessProbe:
             httpGet:
-              path: {{ .Values.mgmt.healthzPath }}
-              port: mgmt
+              path: /healthz
+              port: wire
+              {{- if .Values.tls.enabled }}
+              scheme: HTTPS
+              {{- end }}
             initialDelaySeconds: 10
             periodSeconds: 20
             timeoutSeconds: 3
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: {{ .Values.mgmt.healthzPath }}
-              port: mgmt
+              path: /healthz
+              port: wire
+              {{- if .Values.tls.enabled }}
+              scheme: HTTPS
+              {{- end }}
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
@@ -103,12 +145,6 @@ spec:
               mountPath: /etc/kbounce/tls
               readOnly: true
             {{- end }}
-            {{- if .Values.upstream.caBundle }}
-            - name: upstream-ca
-              mountPath: /etc/kbounce/upstream-ca.crt
-              subPath: upstream-ca.crt
-              readOnly: true
-            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
@@ -121,11 +157,6 @@ spec:
         - name: tls
           secret:
             secretName: {{ .Values.tls.secretName | required "tls.secretName is required when tls.enabled is true" }}
-        {{- end }}
-        {{- if .Values.upstream.caBundle }}
-        - name: upstream-ca
-          configMap:
-            name: {{ include "kbounce.fullname" . }}-upstream-ca
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

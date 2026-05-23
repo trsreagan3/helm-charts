@@ -15,9 +15,5 @@ spec:
       targetPort: wire
       protocol: TCP
       name: wire
-    - port: {{ .Values.mgmt.port }}
-      targetPort: mgmt
-      protocol: TCP
-      name: mgmt
   selector:
     {{- include "kbounce.selectorLabels" . | nindent 4 }}

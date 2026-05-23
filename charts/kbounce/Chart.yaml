@@ -2,7 +2,7 @@ apiVersion: v2
 name: kbounce
 description: Kubernetes safety proxy for AI agents and dev workflows
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "1.0.0-pre"
 home: https://github.com/trsreagan3/kbouncer
 sources:

@@ -16,3 +16,41 @@ jobs:
       - uses: helm/chart-testing-action@v2
       - name: ct lint
         run: ct lint --charts charts/kbounce --validate-maintainers=false --target-branch main
+      - name: helm template (defaults + every example)
+        run: |
+          set -euxo pipefail
+          helm template x charts/kbounce > /tmp/render-defaults.yaml
+          for f in charts/kbounce/examples/*.yaml; do
+            helm template x charts/kbounce -f "$f" > "/tmp/render-$(basename "$f")"
+          done
+
+  # Smoke test: install on a kind cluster and verify the pod actually
+  # reaches Ready. Catches the class of bug where chart args don't
+  # match the kbounce binary's flag surface (§A33 / iam-jit task #364).
+  # `helm lint` + `helm template` cannot catch that — only running the
+  # binary can.
+  kind-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: kbounce-smoke
+      - name: helm install
+        run: |
+          helm install x charts/kbounce \
+            --set image.tag=main \
+            --wait --timeout=120s
+      - name: pod status on failure
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl describe pod -l app.kubernetes.io/name=kbounce || true
+          kubectl logs -l app.kubernetes.io/name=kbounce --tail=200 || true
+      - name: probe /healthz via port-forward
+        run: |
+          kubectl port-forward svc/x-kbounce 18443:8443 &
+          PF_PID=$!
+          sleep 3
+          curl --fail --max-time 5 http://127.0.0.1:18443/healthz
+          kill $PF_PID || true

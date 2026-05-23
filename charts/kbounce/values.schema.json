@@ -47,17 +47,7 @@
       "type": "object",
       "required": ["apiserver"],
       "properties": {
-        "apiserver": {"type": "string", "format": "uri"},
-        "caBundle": {"type": "string"}
-      }
-    },
-    "mgmt": {
-      "type": "object",
-      "required": ["host", "port", "healthzPath"],
-      "properties": {
-        "host": {"type": "string"},
-        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
-        "healthzPath": {"type": "string", "pattern": "^/"}
+        "apiserver": {"type": "string", "format": "uri"}
       }
     },
     "tls": {
@@ -67,6 +57,18 @@
         "enabled": {"type": "boolean"},
         "secretName": {"type": "string"},
         "clientAuth": {"type": "boolean"}
+      }
+    },
+    "audit": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "object",
+          "properties": {
+            "existingSecret": {"type": "string"},
+            "token": {"type": "string"}
+          }
+        }
       }
     },
     "versionCheck": {
